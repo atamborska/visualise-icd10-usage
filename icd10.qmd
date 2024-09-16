@@ -1,0 +1,109 @@
+---
+title: "ICD-10 Usage"
+author: "Arina Tamborska"
+format: html
+editor: visual
+---
+
+# Step 1: Load in and process the ICD-10 usage data
+
+```{r}
+#Load libraries
+library(tidyverse)
+library(janitor)
+if (!require(readxl)) install.packages("readxl")
+library (readxl)
+```
+
+NB. The xlsx files have to meet the following criteria: \@ all diagnosis four letter code needs to be in tab 6 \@ the usage counts for all diagnoses start no earlier than row 11 \@ columns A, B and H (1, 2 and 8) correspond to code, diagnosis, and usage
+
+Variations: \@ 2020 - 2017 usage count starts in row 12 \@ 2016, 2015 usage count starts in row 13 \@ 2014 - count starts in row 19, counts in column C \@ 2013 - count starts in row 20, counts in column C \@ 2012 - down: there are just primary diagnosis labels, no all diagnosis
+
+## Create a list of URLs, assign dates
+
+```{r}
+# Create a list of urls with years assigned to them, because of different formatting, create 2015 - 2023, and 2013-2014 separately
+
+icd10_usage_urls_2015_2023<- list(
+  "2023-09-01" = "https://files.digital.nhs.uk/7A/DB1B00/hosp-epis-stat-admi-diag-2022-23-tab_V2.xlsx",
+  "2022-09-01" = "https://files.digital.nhs.uk/0E/E70963/hosp-epis-stat-admi-diag-2021-22-tab.xlsx",
+  "2021-09-01" = "https://files.digital.nhs.uk/5B/AD892C/hosp-epis-stat-admi-diag-2020-21-tab.xlsx",
+  "2020-09-01" = "https://files.digital.nhs.uk/37/8D9781/hosp-epis-stat-admi-diag-2019-20-tab%20supp.xlsx",
+  "2019-09-01" = "https://files.digital.nhs.uk/1C/B2AD9B/hosp-epis-stat-admi-diag-2018-19-tab.xlsx",
+  "2018-09-01" = "https://files.digital.nhs.uk/B2/5CEC8D/hosp-epis-stat-admi-diag-2017-18-tab.xlsx",
+  "2017-09-01" = "https://files.digital.nhs.uk/publication/7/d/hosp-epis-stat-admi-diag-2016-17-tab.xlsx",
+  "2016-09-01" = "https://files.digital.nhs.uk/publicationimport/pub22xxx/pub22378/hosp-epis-stat-admi-diag-2015-16-tab.xlsx",
+  "2015-09-01" = "https://files.digital.nhs.uk/publicationimport/pub19xxx/pub19124/hosp-epis-stat-admi-diag-2014-15-tab.xlsx")
+
+
+icd10_usage_urls_2013_2014 <- list(
+  "2014-09-01" = "https://files.digital.nhs.uk/publicationimport/pub16xxx/pub16719/hosp-epis-stat-admi-diag-2013-14-tab.xlsx",
+  "2013-09-01" = "https://files.digital.nhs.uk/publicationimport/pub12xxx/pub12566/hosp-epis-stat-admi-diag-2012-13-tab.xlsx"
+  )
+```
+
+## Process the 2015 - 2023 data
+
+```{r warning=F}
+
+df_2015_2023 <- data.frame()
+
+for (url in icd10_usage_urls_2015_2023) {
+  download.file(url, destfile = "tmp.xlsx", mode = "wb")
+  
+  # read in sheet 6 (all four letter diagnoses)
+  df <- read_excel("tmp.xlsx", sheet = 6, col_names = T, skip = 10)
+  file.remove("tmp.xlsx")
+  
+  # keep cols A (=code), B (=diagnosis), H (=usage)
+  df <- df[, c(1,2,8)]
+  colnames(df) <- c("code", "diagnosis", "use")
+  df$use<- as.numeric(df$use)
+  
+  #Create an index to assign a year
+  index <- which(
+    sapply(
+      icd10_usage_urls_2015_2023, function(x) url %in% x))
+  
+  # Process the df: remove NAs use, add prop, add year, remove str .
+  df <- df |>
+    filter(!is.na(use)) |>
+    mutate(
+    prop = use/ sum(use),
+    year = as.Date(names(icd10_usage_urls_2015_2023)[index]),
+    code = str_replace_all(code, "\\.", "")
+    )
+  
+  # Bind all dfs together
+  df_2015_2023 <- rbind(df_2015_2023, df)
+}
+
+```
+
+
+## Process the 2013 - 2024 data
+
+
+
+# Step 2: Visualise the data
+
+```{r}
+# Example vis - those contributing more than 1% in at least one year
+
+# Identify codes for these
+
+codes_usage_0.01 <- 
+  df_2015_2023 |> 
+  filter(prop >= 0.01)|>
+  select(code) |>
+  unique()
+codes_usage_0.01 <- codes_usage_0.01$code
+
+# Visualise
+df_2015_2023 |>
+  filter(code %in% codes_usage_0.01)|>
+  ggplot(aes(year, use, colour = diagnosis)) +
+  geom_line() +
+  theme_minimal()
+
+```
