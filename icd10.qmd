@@ -100,6 +100,15 @@ codes_usage_0.01 <-
 codes_usage_0.01 <- codes_usage_0.01$code
 
 # Visualise
+
+# With codes
+df_2015_2023 |>
+  filter(code %in% codes_usage_0.01)|>
+  ggplot(aes(year, use, colour = diagnosis)) +
+  geom_line() +
+  theme_minimal()
+
+# With diagnoses
 df_2015_2023 |>
   filter(code %in% codes_usage_0.01)|>
   ggplot(aes(year, use, colour = diagnosis)) +
