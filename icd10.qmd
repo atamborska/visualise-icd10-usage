@@ -18,15 +18,16 @@ library(janitor)
 if (!require(readxl)) install.packages("readxl")
 library (readxl)
 if (!require(forcats)) install.packages("forcats")
+if(! require(shiny)) install.packages ("shiny")
 ```
 
 NB. The xlsx files have to meet the following criteria:
 
 -   all diagnosis four letter code needs to be in tab 6
 
--    the usage counts for all diagnoses start no earlier than row 11
+-   the usage counts for all diagnoses start no earlier than row 11
 
--    columns A, B and H (1, 2 and 8) correspond to code, diagnosis, and usage
+-   columns A, B and H (1, 2 and 8) correspond to code, diagnosis, and usage
 
 Variations:
 
@@ -99,6 +100,7 @@ for (url in icd10_usage_urls_2015_2023) {
   df_2015_2023 <- rbind(df_2015_2023, df)
 }
 
+
 ```
 
 ## Process the 2013 - 2014 data
@@ -143,6 +145,11 @@ rm(df, i, index, url, year)
 
 ```{r}
 df_2013_2023 <- rbind(df_2015_2023, df_2013_2014)
+
+df <- 
+  df_2013_2023 |>
+  mutate(year = year(year))
+write.csv(df, "df.csv", fileEncoding = "UTF-8")
 ```
 
 # Step 2: Visualise the general data
@@ -287,4 +294,128 @@ df_pregnancy|>
 
 ```
 
-# 
+# Develop an app in R shiny
+
+
+```{r}
+
+ui <- fluidPage(
+  titlePanel("ICD-10 Usage over time in HES"),
+  
+  sidebarLayout(
+    sidebarPanel(
+      textInput("icd10_code", "Enter the code:", value = "A000"),
+      sliderInput("year_range", "Select year range:",
+                  min = 2013, max = 2023, value = c(2013, 2023), step = 1)
+    ),
+    
+    mainPanel(
+      tableOutput("usage_table"),
+      plotOutput("usage_plot")
+    )
+  )
+)
+
+
+server <- function(input, output) {
+  
+  filtered_df <- reactive({
+    req(input$icd10_code)
+    df |>
+      filter(
+        code == input$icd10_code,
+          year  >= input$year_range[1],
+          year <= input$year_range[2]
+      )
+  })
+  
+  output$usage_table <- renderTable({
+    filtered_df()
+  })
+  
+  output$usage_plot <- renderPlot({
+      ggplot(filtered_df, aes(x = year, y = use)) +
+        geom_line() +
+        geom_point() +
+        labs(x = "Year", y = "Usage") +
+        theme_minimal()
+  })
+}
+
+# Run the application
+shinyApp(ui = ui, server = server)
+
+```
+ 
+
+
+# Develop an app in python streamlit
+reticulate::repl_python() Please note that for this file to knit you have to install streamlit (pip install streamlit) & matplotlib.pylot (pip )
+
+
+```{python}
+
+import subprocess
+import sys
+
+packages = ['streamlit', 'pandas', 'matplotlib'] 
+
+def install(package):
+    subprocess.check_call([sys.executable, '-m', 'pip', 'install', package])
+
+for package in packages:
+    try:
+        __import__(package)
+    except ImportError:
+        print(f"Installing {package}...")
+        install(package)
+    else:
+        print(f"{package} is already installed.")
+
+```
+
+
+```{python}
+
+import streamlit as st
+import pandas as pd
+import matplotlib.pyplot as plt
+
+df = pd.read_csv('df.csv', usecols = ["code", "diagnosis", "use", "year"])
+
+```
+
+Next, run the app:
+
+```{python}
+
+st.title("ICD-10 HES Usage Visualiser")
+
+# User input
+icd10_code = st.text_input("Enter the ICD-10 Code:", value="A000")
+
+# Filtered df
+filtered_df = df[df['code'] == icd10_code]
+
+if not filtered_df.empty:
+    # Slider
+    min_year = int(filtered_df['year'].min())
+    max_year = int(filtered_df['year'].max())
+    year_range = st.slider("Select Year Range:", min_value=min_year, max_value=max_year, value=(min_year, max_year))
+
+    # Filter df by years
+    filtered_df = filtered_df[(filtered_df['year'] >= year_range[0]) & (filtered_df['year'] <= year_range[1])]
+
+    # Display
+    st.write(filtered_df[['year', 'use']])
+
+    # Plot
+    fig, ax = plt.subplots()
+    ax.plot(filtered_df['year'], filtered_df['use'], marker='o')
+    ax.set_xlabel('Year')
+    ax.set_ylabel('Usage in HES')
+    ax.set_title(f'HES Usage over time for {icd10_code}')
+    st.pyplot(fig)
+else:
+    st.write("No such code.")
+```
