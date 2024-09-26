@@ -1,7 +1,9 @@
 ---
 title: "ICD-10 Usage"
 author: "Arina Tamborska"
-format: html
+format: 
+  html:
+    df-print: paged
 editor: visual
 ---
 
@@ -13,12 +15,18 @@ knitr::opts_chunk$set(message= FALSE, warning = FALSE)
 
 ```{r}
 #Load libraries
+if (!require(readxl)) install.packages("readxl")
+if (!require(forcats)) install.packages("forcats")
+if (!require(shiny)) install.packages ("shiny")
+if (!require(reticulate)) install.packages("reticulate")
+
+
 library(tidyverse)
 library(janitor)
-if (!require(readxl)) install.packages("readxl")
 library (readxl)
-if (!require(forcats)) install.packages("forcats")
-if(! require(shiny)) install.packages ("shiny")
+library(forcats)
+library(shiny)
+library(reticulate)
 ```
 
 NB. The xlsx files have to meet the following criteria:
@@ -150,6 +158,8 @@ df <-
   df_2013_2023 |>
   mutate(year = year(year))
 write.csv(df, "df.csv", fileEncoding = "UTF-8")
+
+rm(df_2013_2014, df_2013_2023, df_2015_2023, icd10_usage_urls_2013_2014, icd10_usage_urls_2015_2023)
 ```
 
 # Step 2: Visualise the general data
@@ -246,7 +256,6 @@ df_pregnancy |>
   arrange(year) |>
   pivot_wider(values_from = use, names_from = year)
 
-
 ```
 
 ```{r}
@@ -259,6 +268,7 @@ df_pregnancy |>
   theme_bw()+
   labs(title = "Total volume of pregnancy code 
        use in HES, excluding Z370")
+
 ```
 
 ```{r}
@@ -271,12 +281,12 @@ df_pregnancy |>
   theme_bw()+
   labs(title = "Total volume of pregnancy code 
        use in HES, excluding Z370 & Z352")
+
 ```
 
 # Step 4: Visual exploration of pregnancy codes
 
 ```{r}
-
 df_pregnancy|>
   mutate(diagnosis = ifelse(prop >= 0.001, diagnosis, "Other")) |>
   group_by(year, diagnosis) |>
@@ -296,7 +306,6 @@ df_pregnancy|>
 
 # Step 5: Develop an app in R shiny
 
-
 ```{r}
 
 ui <- fluidPage(
@@ -312,7 +321,8 @@ ui <- fluidPage(
                   min = 2013, 
                   max = 2023, 
                   value = c(2013, 2023), 
-                  step = 1)
+                  step = 1,
+                  sep = "")
     ),
     
     mainPanel(
@@ -326,44 +336,67 @@ ui <- fluidPage(
 
 server <- function(input, output) {
   
-  filtered_df <-
+  filtered_df <- reactive({
     df |>
       filter(code == input$icd10_code,
              year  >= input$year_range[1],
-             year <= input$year_range[2])|>
-      select("year", "use")|>
-      mutate(year = as.integer(year),
-             use = as.integer(use))|>
-      colnames(c("Year", "Annual Use"))
+             year <= input$year_range[2])
+  })
   
   output$diagnosis <- renderText({
-    diagnosis <- filtered_df$diagnosis[1]
-    return(diagnosis)
+    if (input$icd10_code %in% df$code) {
+        unique(filtered_df()$diagnosis)
+    } else {
+      "No such ICD-10 code."
+    }  
+      
   })
   
   output$usage_table <- renderTable({
-    filtered_df()
+    if(nrow(filtered_df())>0){
+      filtered_df()|>
+        select(year, use)|>
+        mutate(year = as.integer(year),
+               use = as.integer(use))|>
+        setNames(c("Year", "Annual Use"))
+    } else {
+      "No data for the selected year range."
+    }
   })
   
   output$usage_plot <- renderPlot({
-      ggplot(filtered_df, aes(x = year, y = use)) +
+    if (nrow(filtered_df()>0)) {
+      ggplot(filtered_df(), aes(
+        x = year, 
+        y = use)) +
         geom_line() +
         geom_point() +
         labs(x = "Year", y = "Usage") +
+        scale_x_continuous(breaks = 
+                             seq(input$year_range[1],
+                                 input$year_range[2], 
+                                 1), 
+                           labels = 
+                             seq(input$year_range[1],
+                                 input$year_range[2], 
+                                 1))+
         theme_minimal()
+    } else {
+      ""
+    }
   })
 }
 
-# Run the application
 shinyApp(ui = ui, server = server)
 
 ```
- 
-
 
 # Step 6: Develop an app in python streamlit
 
+First, run the following chunk to ensure the right environment for the app.
+
 ```{python}
+# Install packages
 
 import subprocess
 import sys
@@ -384,3 +417,6 @@ for package in packages:
 
 ```
 
+Next run the following in your terminal:
+
+\`\`\`bash streamlit run icd10_app.py
